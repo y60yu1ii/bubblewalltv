@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bubble Wall TV</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #000;
+            overflow: hidden
+        }
+
+        .stage {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center
+        }
+
+        .phone {
+            aspect-ratio: 9/16;
+            width: min(100vw, calc(100vh*9/16));
+            height: min(100vh, calc(100vw*16/9));
+            background:
+                radial-gradient(900px 700px at 55% 20%, rgba(40, 120, 255, .10), rgba(0, 0, 0, 0) 60%),
+                #050812;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block
+        }
+    </style>
+</head>
+
+<body>
+    <div class="stage">
+        <div class="phone"><canvas id="c"></canvas></div>
+    </div>
+
+    <script>
+        const c = document.getElementById("c");
+        const ctx = c.getContext("2d", { alpha: true });
+
+        function resize() {
+            const r = c.getBoundingClientRect();
+            const dpr = Math.max(1, Math.min(2.5, devicePixelRatio || 1));
+            c.width = Math.floor(r.width * dpr);
+            c.height = Math.floor(r.height * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // CSS px
+        }
+        addEventListener("resize", resize); resize();
+
+        const TANKS = 4;
+        const dividerW = 2;            // ✅ 分隔線寬度（CSS px）
+        const dividerAlpha = 0.09;     // ✅ 分隔線透明度
+
+        const density = 3000, spawnRate = 80;
+        const rMin = 1.2, rMax = 2.8;
+        const riseMin = 140, riseMax = 340;
+        const columnFocus = 0.13;
+
+        const gatherForce = 120;       // 上方收束力
+        const topGatherStart = 0.5;    // 從上半部開始加強收束
+
+        let time = 0;
+        let particles = Array.from({ length: TANKS }, () => []);
+
+        function rand(a, b) { return a + Math.random() * (b - a) }
+        function clamp(v, a, b) { return Math.max(a, Math.min(b, v)) }
+
+        function tankRect(i, W, H) {
+            // ✅ 把分隔線寬度扣掉，避免泡泡畫到線上
+            const totalDivider = dividerW * (TANKS - 1);
+            const w = (W - totalDivider) / TANKS;
+            const x = i * (w + dividerW);
+            return { x, w, h: H };
+        }
+
+        function drawDividers(W, H) {
+            ctx.save();
+            ctx.globalCompositeOperation = "source-over";
+            ctx.fillStyle = `rgba(255,255,255,${dividerAlpha})`;
+            for (let i = 1; i < TANKS; i++) {
+                const x = i * (W / TANKS) - dividerW / 2; // 視覺上均分的位置
+                ctx.fillRect(Math.round(x), 0, dividerW, H);
+            }
+            ctx.restore();
+        }
+
+        function spawn(i, tr, baseHue) {
+            const cx = tr.x + tr.w * 0.5;
+            const spread = (Math.random() - Math.random()) * tr.w * columnFocus;
+
+            particles[i].push({
+                x: cx + spread,
+                y: tr.h + Math.random() * tr.h * 0.05,
+                r: rand(rMin, rMax),
+                vy: rand(riseMin, riseMax),
+                vx: rand(-6, 6),
+                a: 0, life: 0,
+                hue: baseHue + rand(-6, 6),   // 全域 hue 漸變 + 小抖動
+                sat: rand(80, 100),
+                lum: rand(55, 72),
+            });
+        }
+
+        let last = performance.now();
+        function tick(now) {
+            const dt = Math.min(0.033, (now - last) / 1000);
+            last = now; time += dt;
+
+            const W = c.getBoundingClientRect().width;
+            const H = c.getBoundingClientRect().height;
+
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = "#050812";
+            ctx.fillRect(0, 0, W, H);
+
+            // ✅ 分隔線（在背景層先畫）
+            drawDividers(W, H);
+
+            // ===== 全域 hue 緩慢漂移（從藍開始）=====
+            const baseHue = 205 + Math.sin(time * 0.08) * 12;
+
+            // 生成
+            const total = particles.reduce((s, a) => s + a.length, 0);
+            const perTank = Math.max(0, Math.floor(
+                Math.min(spawnRate, (density - total) / TANKS)
+            ));
+            for (let i = 0; i < TANKS; i++) {
+                const tr = tankRect(i, W, H);
+                for (let k = 0; k < perTank; k++) spawn(i, tr, baseHue);
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+
+            for (let i = 0; i < TANKS; i++) {
+                const tr = tankRect(i, W, H);
+                const arr = particles[i];
+                ctx.save();
+                ctx.beginPath(); ctx.rect(tr.x, 0, tr.w, H); ctx.clip();
+
+                const cx = tr.x + tr.w * 0.5;
+
+                for (let j = arr.length - 1; j >= 0; j--) {
+                    const p = arr[j];
+                    p.life += dt;
+
+                    // 上方更集中：越靠上越往中心收
+                    const yNorm = clamp(1 - (p.y / H), 0, 1); // 底=0 上=1
+                    const topT = clamp((yNorm - topGatherStart) / (1 - topGatherStart), 0, 1);
+                    p.vx += (cx - p.x) * (gatherForce * topT) * dt;
+
+                    p.x += p.vx * dt;
+                    p.y -= p.vy * dt;
+
+                    p.a = clamp(p.a + dt * 4, 0, 1);
+                    const topFade = clamp((yNorm - 0.72) / 0.22, 0, 1);
+                    const alpha = p.a * (1 - topFade);
+
+                    ctx.fillStyle = `hsla(${p.hue},${p.sat}%,${p.lum}%,${alpha})`;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+
+                    if (p.y < -20 || alpha < 0.02) arr.splice(j, 1);
+                }
+
+                ctx.restore();
+            }
+
+            ctx.restore();
+
+            // ✅ 如果你想分隔線「蓋在泡泡上」，把這行打開（線會更清楚）
+            // drawDividers(W,H);
+
+            requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+    </script>
+</body>
+
+</html>

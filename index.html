@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bubble Wall TV</title>
+
+    <style>
+        :root {
+            --bg: #050814;
+            --panel: #0b1022;
+            --glow1: #6aa8ff;
+            --glow2: #b58cff;
+            --text: #e9ecff;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(1200px 800px at 50% 20%, #0f1b44 0%, transparent 60%),
+                radial-gradient(800px 600px at 20% 80%, #2a0f44 0%, transparent 60%),
+                var(--bg);
+            color: var(--text);
+            font-family:
+                system-ui, -apple-system, "Segoe UI",
+                "Noto Sans TC", "PingFang TC", sans-serif;
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lamp {
+            width: min(92vw, 560px);
+            aspect-ratio: 9/16;
+            background:
+                radial-gradient(140% 90% at 50% 90%, rgba(120, 160, 255, .18), transparent 60%),
+                linear-gradient(180deg, #0d1330, #070a1a 70%);
+            border-radius: 28px;
+            box-shadow:
+                0 40px 120px rgba(0, 0, 0, .75),
+                inset 0 0 80px rgba(120, 160, 255, .10);
+            padding: 40px 28px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .title {
+            text-align: center;
+        }
+
+        .title h1 {
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--glow1), var(--glow2));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-shadow: 0 0 18px rgba(160, 180, 255, .35);
+        }
+
+        .title p {
+            margin: 10px 0 0;
+            font-size: 14px;
+            opacity: .75;
+            letter-spacing: .1em;
+        }
+
+        /* 按鈕區 */
+        .buttons {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 26px 20px;
+            border-radius: 18px;
+            text-align: center;
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: .08em;
+            color: white;
+            text-decoration: none;
+            position: relative;
+            background:
+                linear-gradient(180deg,
+                    rgba(120, 160, 255, .35),
+                    rgba(60, 90, 200, .25));
+            box-shadow:
+                0 0 0 1px rgba(140, 170, 255, .25),
+                0 14px 40px rgba(80, 120, 255, .25),
+                inset 0 0 30px rgba(160, 200, 255, .18);
+            transition:
+                transform .25s ease,
+                box-shadow .25s ease,
+                background .25s ease;
+        }
+
+        .btn::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            box-shadow: 0 0 40px rgba(160, 200, 255, .45);
+            opacity: .0;
+            transition: opacity .25s ease;
+            pointer-events: none;
+        }
+
+        .btn:hover {
+            transform: translateY(-4px);
+            box-shadow:
+                0 0 0 1px rgba(170, 200, 255, .35),
+                0 22px 60px rgba(120, 160, 255, .45),
+                inset 0 0 40px rgba(180, 220, 255, .28);
+        }
+
+        .btn:hover::after {
+            opacity: 1;
+        }
+
+        .btn span {
+            display: block;
+            margin-top: 6px;
+            font-size: 13px;
+            opacity: .75;
+            font-weight: 400;
+            letter-spacing: .05em;
+        }
+
+        .footer {
+            font-size: 12px;
+            opacity: .5;
+            letter-spacing: .08em;
+        }
+
+        @media (max-height:680px) {
+            .lamp {
+                padding: 28px 22px
+            }
+
+            .btn {
+                padding: 22px 18px;
+                font-size: 20px
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="lamp">
+        <div class="title">
+            <h1>Bubble Wall TV</h1>
+        </div>
+
+        <div class="buttons">
+            <a class="btn" href="./bw1.html">
+                Bubble Wall · A
+                <span>Colorful bubble with glass effect</span>
+            </a>
+
+            <a class="btn" href="./bw2.html">
+                Bubble Wall · B
+                <span>Whit buble</span>
+            </a>
+        </div>
+
+        <div class="footer">
+            Touch to Enter
+        </div>
+    </div>
+</body>
+
+</html>
