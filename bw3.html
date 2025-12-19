@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport"
+        content="width=device-width,height=device-height,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>Bubble Wall 1x4（橫向四格 / 泡泡往上）</title>
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        /* 全螢幕滿版 */
+        #stage {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            cursor: none;
+            user-select: none;
+            touch-action: none;
+            background: radial-gradient(ellipse at 50% 80%, rgba(40, 60, 120, .25), rgba(0, 0, 0, 1) 65%);
+        }
+
+        /* 1x4：一排四格（4 cols x 1 row） */
+        #grid {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: 1fr;
+        }
+
+        .cell {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cell canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* 每格 LED 氛圍層 */
+        .ledGlow {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(ellipse at 50% 100%, rgba(0, 180, 255, .35), rgba(0, 0, 0, 0) 55%),
+                linear-gradient(to top, rgba(80, 0, 255, .18), rgba(0, 0, 0, 0) 55%);
+            mix-blend-mode: screen;
+            animation: hue 16s linear infinite, breathe 6s ease-in-out infinite;
+            opacity: .9;
+        }
+
+        /* 玻璃質感（反光＋側邊暗） */
+        .glass {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background:
+                linear-gradient(120deg,
+                    rgba(255, 255, 255, 0) 0%,
+                    rgba(255, 255, 255, .06) 22%,
+                    rgba(255, 255, 255, 0) 38%,
+                    rgba(255, 255, 255, .04) 55%,
+                    rgba(255, 255, 255, 0) 72%),
+                linear-gradient(to right,
+                    rgba(0, 0, 0, .35) 0%,
+                    rgba(0, 0, 0, 0) 12%,
+                    rgba(0, 0, 0, 0) 88%,
+                    rgba(0, 0, 0, .35) 100%);
+            opacity: .55;
+        }
+
+        /* 直向分隔線（四格分隔） */
+        .vdivider {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, .18), rgba(255, 255, 255, 0));
+            opacity: .35;
+            pointer-events: none;
+        }
+
+        #v1 {
+            left: 25%;
+        }
+
+        #v2 {
+            left: 50%;
+        }
+
+        #v3 {
+            left: 75%;
+        }
+
+        @keyframes hue {
+            from {
+                filter: hue-rotate(0deg);
+            }
+
+            to {
+                filter: hue-rotate(360deg);
+            }
+        }
+
+        @keyframes breathe {
+
+            0%,
+            100% {
+                opacity: .75;
+            }
+
+            50% {
+                opacity: .95;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="stage">
+        <div id="grid">
+            <div class="cell" data-i="0">
+                <canvas></canvas>
+                <div class="ledGlow"></div>
+                <div class="glass"></div>
+            </div>
+            <div class="cell" data-i="1">
+                <canvas></canvas>
+                <div class="ledGlow"></div>
+                <div class="glass"></div>
+            </div>
+            <div class="cell" data-i="2">
+                <canvas></canvas>
+                <div class="ledGlow"></div>
+                <div class="glass"></div>
+            </div>
+            <div class="cell" data-i="3">
+                <canvas></canvas>
+                <div class="ledGlow"></div>
+                <div class="glass"></div>
+            </div>
+        </div>
+
+        <div class="vdivider" id="v1"></div>
+        <div class="vdivider" id="v2"></div>
+        <div class="vdivider" id="v3"></div>
+    </div>
+
+    <script>
+        (() => {
+            // 內部渲染比例：越小越省效能（0.6~1.0）
+            const RENDER_SCALE = 0.75;
+
+            // 每格粒子控制（四格總量 = 4 * MAX_BUBBLES_PER_CELL）
+            const MAX_BUBBLES_PER_CELL = 220;
+            const EMIT_PER_SEC = 150;     // 每格底部生成速率
+            const BASE_DRIFT = 18;       // 左右漂移幅度(px)
+            const BG_FADE = 0.18;        // 殘影感(0~1) 越小越拖影
+
+            const cells = Array.from(document.querySelectorAll('.cell'));
+            const engines = cells.map((cell, idx) => {
+                const canvas = cell.querySelector('canvas');
+                const ctx = canvas.getContext('2d', { alpha: true });
+
+                // 每格 LED 色相錯開，讓四格更有“分段裝置”感
+                const led = cell.querySelector('.ledGlow');
+                led.style.animationDelay = `${idx * -2.3}s`;
+
+                return { idx, cell, canvas, ctx, w: 0, h: 0, dpr: 1, bubbles: [], emitCarry: 0 };
+            });
+
+            function rand(min, max) { return min + Math.random() * (max - min); }
+
+            function resizeOne(e) {
+                const rect = e.cell.getBoundingClientRect();
+                e.dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+                e.w = Math.max(2, Math.floor(rect.width * e.dpr * RENDER_SCALE));
+                e.h = Math.max(2, Math.floor(rect.height * e.dpr * RENDER_SCALE));
+                e.canvas.width = e.w;
+                e.canvas.height = e.h;
+
+                e.ctx.fillStyle = 'rgba(0,0,0,1)';
+                e.ctx.fillRect(0, 0, e.w, e.h);
+            }
+
+            function resizeAll() { engines.forEach(resizeOne); }
+
+            function spawnBubble(e) {
+                // 噴口位置：底部中央（可微調）
+                const nozzleX = e.w * 0.5;
+                const nozzleY = e.h + 6; // 略在畫面下方，像從底部噴出
+
+                // 底部只噴小泡（壓力大 → 小泡多）
+                const t = Math.random();
+                const r0 = 2 + Math.pow(t, 2.8) * 4; // 2~6，偏向更小
+
+                // 噴口擴散：半徑越小越集中、越大稍微散
+                const spread = 6 + r0 * 2.2; // 噴口寬度
+                const x = nozzleX + rand(-spread, spread);
+                const y = nozzleY + rand(0, 10);
+
+                // 往上速度（小泡快），加一點點隨機讓它像「噴」
+                const SPEED_MUL = 1.6;
+                const baseSpeed = rand(75, 140) * SPEED_MUL;
+                const vy = baseSpeed / (0.7 + r0 * 0.12);
+
+                // 左右漂移：噴口初始給一點點水平動量
+                const vx0 = rand(-10, 10) / (0.8 + r0 * 0.2); // px/s
+                const driftPhase = rand(0, Math.PI * 2);
+                const driftSpeed = rand(0.7, 1.7);
+
+                e.bubbles.push({
+                    x, y,
+                    r0,
+                    r: r0,
+                    vy,
+                    vx: vx0,           // 初始水平速度（像噴射散開）
+                    driftPhase,
+                    driftSpeed,
+                    alpha0: 0.16 + r0 * 0.03,
+                    alpha: 0.2,
+                    life: 1
+                });
+            }
+
+            function drawBubble(ctx, b) {
+                const x = b.x, y = b.y;
+
+                // 亮邊 + 柔光暈（用漸層假玻璃）
+                const g1 = ctx.createRadialGradient(x - b.r * 0.35, y - b.r * 0.35, b.r * 0.15, x, y, b.r);
+                g1.addColorStop(0, `rgba(255,255,255,${0.10 * b.life})`);
+                g1.addColorStop(0.55, `rgba(255,255,255,${0.04 * b.life})`);
+                g1.addColorStop(1, `rgba(255,255,255,0)`);
+
+                const r = b.r;
+                const g2 = ctx.createRadialGradient(x, y, r * 0.25, x, y, r);
+                g2.addColorStop(0, `rgba(255,255,255,${(b.alpha * 0.18) * b.life})`);
+                g2.addColorStop(0.75, `rgba(255,255,255,${(0.35 + r * 0.03) * 0.22 * b.life})`);
+                g2.addColorStop(1, `rgba(255,255,255,0)`);
+
+                ctx.beginPath();
+                ctx.fillStyle = g2;
+                ctx.arc(x, y, b.r, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.fillStyle = g1;
+                ctx.arc(x, y, b.r * 1.35, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 小高光點
+                ctx.beginPath();
+                ctx.fillStyle = `rgba(255,255,255,${0.20 * b.life})`;
+                ctx.arc(x - b.r * 0.35, y - b.r * 0.35, Math.max(1, b.r * 0.12), 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            let lastT = performance.now();
+            function step(now) {
+                const dt = Math.min(0.033, (now - lastT) / 1000);
+                lastT = now;
+
+                for (const e of engines) {
+                    const ctx = e.ctx;
+
+                    // 淡淡擦除 → 拖影水牆感
+                    ctx.fillStyle = `rgba(0,0,0,${BG_FADE})`;
+                    ctx.fillRect(0, 0, e.w, e.h);
+
+                    // 生成泡泡
+                    e.emitCarry += EMIT_PER_SEC * dt;
+                    while (e.emitCarry >= 1) {
+                        if (e.bubbles.length < MAX_BUBBLES_PER_CELL) spawnBubble(e);
+                        e.emitCarry -= 1;
+                    }
+
+                    // 更新 + 繪製（泡泡往上）
+                    const centerPull = 0.06;
+
+                    for (let i = e.bubbles.length - 1; i >= 0; i--) {
+                        const b = e.bubbles[i];
+
+                        // 上升
+                        b.y -= b.vy * dt;
+
+                        // 高度比例：0 在底部、1 在頂部
+                        const t = 1 - (b.y / e.h);
+                        const tt = Math.max(0, Math.min(1, t));
+                        const easeOut = 1 - Math.pow(1 - tt, 2);
+                        // 壓力降低 → 泡泡膨脹：底部小、往上變大
+                        const growMul = 1 + 1.35 * easeOut;
+                        b.r = b.r0 * growMul;
+
+                        // 初始噴射水平動量（vx）逐漸衰減，避免越飄越遠
+                        b.vx *= (1 - 2.2 * dt);
+                        b.x += b.vx * dt;
+
+                        // 加上緩慢左右漂移（自然流動感）
+                        b.driftPhase += b.driftSpeed * dt;
+                        const driftAmp = BASE_DRIFT * (0.35 + b.r * 0.04);
+                        b.x += Math.sin(b.driftPhase) * driftAmp * dt;
+
+                        // 輕微往格子中心收（像在槽內上升）
+                        const centerPull = 0.08;
+                        b.x += (e.w * 0.5 - b.x) * centerPull * dt;
+
+                        // 越上越亮一點
+                        b.alpha = Math.min(0.75, b.alpha0 + b.r * 0.02 + easeOut * 0.08);
+                        // 到頂淡出 / 回收
+                        if (b.y < -b.r * 2) {
+                            e.bubbles.splice(i, 1);
+                            continue;
+                        } else if (b.y < b.r * 3) {
+                            b.life = Math.max(0, b.y / (b.r * 3));
+                        } else {
+                            b.life = Math.min(1, b.life + dt * 2);
+                        }
+
+                        drawBubble(ctx, b); // drawBubble 裡改成用 b.r / b.alpha
+                    }
+                }
+
+                requestAnimationFrame(step);
+            }
+
+            // 啟動
+            resizeAll();
+            window.addEventListener('resize', resizeAll, { passive: true });
+            requestAnimationFrame(step);
+        })();
+    </script>
+</body>
+
+</html>
